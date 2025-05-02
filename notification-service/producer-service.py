@@ -9,8 +9,8 @@ conf = {
     'bootstrap.servers': 'pkc-p11xm.us-east-1.aws.confluent.cloud:9092',
     'security.protocol': 'SASL_SSL',
     'sasl.mechanisms': 'PLAIN',
-    'sasl.username': 'VKFP3YCN4IHTSFIJ',
-    'sasl.password': '1dhelgxuKXmqFbKaFMweGAIL8DfTVMe8G20ztLFAEUjQSEk7He7NUGjIWiQx33a5'
+    'sasl.username': 'username',
+    'sasl.password': 'password'
 }
 
 producer = Producer(conf)
