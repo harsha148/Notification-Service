@@ -1,0 +1,176 @@
+services:
+  traefik:
+    image: traefik:v2.10
+    container_name: traefik
+    command:
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik.yml:/etc/traefik/traefik.yml
+    networks:
+      - app-net
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus.rule=PathPrefix(`/prometheus`)"
+      - "traefik.http.services.prometheus.loadbalancer.server.port=9090"
+      - "traefik.http.middlewares.prometheus-strip.stripprefix.prefixes=/prometheus"
+      - "traefik.http.routers.prometheus.middlewares=prometheus-strip"
+    networks:
+      - app-net
+
+  user-preference:
+    build: ./user-preference-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.user-preference.rule=PathPrefix(`/user-preference`)"
+      - "traefik.http.services.user-preference.loadbalancer.server.port=8000"
+      - "traefik.http.middlewares.user-preference-strip.stripprefix.prefixes=/user-preference"
+      - "traefik.http.routers.user-preference.middlewares=user-preference-strip"
+    networks:
+      - app-net
+    environment:
+      - USER_PREFERENCE_SERVICE_URL=http://traefik/user-preference
+      # - USER_PREFERENCE_SERVICE_URL=http://user-preference:8000
+
+  scheduler:
+    build: ./scheduler-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.scheduler.rule=PathPrefix(`/scheduler`)"
+      - "traefik.http.services.scheduler.loadbalancer.server.port=8001"
+      - "traefik.http.middlewares.scheduler-strip.stripprefix.prefixes=/scheduler"
+      - "traefik.http.routers.scheduler.middlewares=scheduler-strip"
+    depends_on:
+      - user-preference
+    networks:
+      - app-net
+    environment:
+      - SCHEDULER_SERVICE_URL=http://traefik/scheduler
+      - NOTIFICATION_SERVICE_URL=http://traefik/notification
+      # - SCHEDULER_SERVICE_URL=http://scheduler:8001
+      # - NOTIFICATION_SERVICE_URL=http://notification:8002
+
+  notification:
+    build: ./notification-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.notification.rule=PathPrefix(`/notification`)"
+      - "traefik.http.services.notification.loadbalancer.server.port=8002"
+      - "traefik.http.middlewares.notification-strip.stripprefix.prefixes=/notification"
+      - "traefik.http.routers.notification.middlewares=notification-strip"
+    depends_on:
+      - user-preference
+      - scheduler
+      - mailhog
+    networks:
+      - app-net
+    environment:
+      - USER_PREFERENCE_SERVICE_URL=http://traefik/user-preference
+      - SCHEDULER_SERVICE_URL=http://traefik/scheduler
+      # - USER_PREFERENCE_SERVICE_URL=http://user-preference:8000
+      # - SCHEDULER_SERVICE_URL=http://scheduler:8001
+      - KAFKA_BOOTSTRAP_SERVERS=pkc-921jm.us-east-2.aws.confluent.cloud:9092
+      - KAFKA_SECURITY_PROTOCOL=SASL_SSL
+      - KAFKA_SASL_MECHANISMS=PLAIN
+      - KAFKA_SASL_USERNAME=6SE6XJOIECDX7XW5
+      - KAFKA_SASL_PASSWORD=GkahdlgjulfMzdqgr3/KhCHHdO964/TU/kyH9LIgrdJVLKmTwYAK/W1l0d3eiOiP
+      - KAFKA_TOPIC=email-notifs
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+
+  consumer:
+    build: ./consumer-service
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.consumer.rule=PathPrefix(`/consumer`)"
+      - "traefik.http.services.consumer.loadbalancer.server.port=8003"
+      - "traefik.http.middlewares.consumer-strip.stripprefix.prefixes=/consumer"
+      - "traefik.http.routers.consumer.middlewares=consumer-strip"
+    depends_on:
+      - notification
+      - mailhog
+    networks:
+      - app-net
+    environment:
+      - USER_PREFERENCE_SERVICE_URL=http://traefik/user-preference  # Pass it through traefik for load balancing
+      - SCHEDULER_SERVICE_URL=http://traefik/scheduler
+      # - USER_PREFERENCE_SERVICE_URL=http://user-preference:8000
+      # - SCHEDULER_SERVICE_URL=http://scheduler:8001
+      - KAFKA_BOOTSTRAP_SERVERS=pkc-921jm.us-east-2.aws.confluent.cloud:9092
+      - KAFKA_SECURITY_PROTOCOL=SASL_SSL
+      - KAFKA_SASL_MECHANISMS=PLAIN
+      - KAFKA_SASL_USERNAME=6SE6XJOIECDX7XW5
+      - KAFKA_SASL_PASSWORD=GkahdlgjulfMzdqgr3/KhCHHdO964/TU/kyH9LIgrdJVLKmTwYAK/W1l0d3eiOiP
+      - KAFKA_TOPIC=email-notifs
+      - KAFKA_GROUP_ID=python-group-1
+      - KAFKA_AUTO_OFFSET_RESET=earliest
+      - SMTP_HOST=mailhog
+      - SMTP_PORT=1025
+
+  mailhog:
+    image: mailhog/mailhog
+    container_name: mailhog
+    ports:
+      - "1025:1025"  # SMTP server
+      - "8025:8025"  # Web interface
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.mailhog.rule=PathPrefix(`/mailhog`)"
+      - "traefik.http.services.mailhog.loadbalancer.server.port=8025"
+      - "traefik.http.middlewares.mailhog-strip.stripprefix.prefixes=/mailhog"
+      - "traefik.http.routers.mailhog.middlewares=mailhog-strip"
+    networks:
+      - app-net
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: jaeger
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "6831:6831/udp" # Jaeger agent (UDP)
+    networks:
+      - app-net
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3000:3000"  # Grafana UI
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - app-net
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana.rule=PathPrefix(`/grafana`)"
+      - "traefik.http.services.grafana.loadbalancer.server.port=3000"
+      - "traefik.http.middlewares.grafana-strip.stripprefix.prefixes=/grafana"
+      - "traefik.http.routers.grafana.middlewares=grafana-strip"
+
+volumes:
+  grafana-data:
+
+networks:
+  app-net:
+    driver: bridge

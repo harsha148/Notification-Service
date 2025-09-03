@@ -1,0 +1,36 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['notification:8002']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 15s
+    scrape_timeout: 15s
+
+  - job_name: 'user-preference-service'
+    static_configs:
+      - targets: ['user-preference:8000']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 15s
+    scrape_timeout: 15s
+
+  - job_name: 'scheduler-service'
+    static_configs:
+      - targets: ['scheduler:8001']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 15s
+    scrape_timeout: 15s
+
+  - job_name: 'consumer-service'
+    static_configs:
+      - targets: ['consumer:8003']
+    metrics_path: '/metrics'
+    scheme: 'http'
+    scrape_interval: 15s
+    scrape_timeout: 15s 
